@@ -1,12 +1,31 @@
-#include "const.h"
+#ifndef _ISOFS_INODE_H_
+#define _ISOFS_INODE_H_
+
+/* #include <minix/libminixfs.h> */
+
+/* #include "inc.h" */
+
+/*#include "const.h"
+#include "extern.h"
+#include "proto.h"
+*/
+
+typedef	struct	{
+	struct timespec	iso_atime;	/* time of last access */
+	struct timespec	iso_mtime;	/* time of last modification */
+	struct timespec	iso_ctime;	/* time file changed */
+	u_short		iso_mode;	/* files access mode and type */
+	uid_t		iso_uid;	/* owner user id */
+	gid_t		iso_gid;	/* owner group id */
+	short		iso_links;	/* links of file */
+	dev_t		iso_rdev;	/* Major/Minor number for special */
+} ISO_RRIP_INODE;
 
 struct dir_record {
   u8_t length;			/* The length of the record */
   u8_t ext_attr_rec_length;
-  u32_t loc_extent_l;		/* The same data (in this case loc_extent)is */
-  u32_t loc_extent_m;		/* saved in two ways. The first puts the le- */
-  u32_t data_length_l;		/* ast significant byte first, the second */
-  u32_t data_length_m;		/* does the opposite */
+  u32_t loc_extent;		/* the extent of the inode  */
+  u32_t data_length;		/* file size */
   u8_t rec_date[7];		/* => recording date */
   u8_t file_flags;		/* => flags of the file */
   u8_t file_unit_size;		/* set of blocks in interleave mode */
@@ -14,12 +33,13 @@ struct dir_record {
   u32_t vol_seq_number;		/* volume sequence number: not used */
   u8_t length_file_id;		/* Length name file */
   char file_id[ISO9660_MAX_FILE_ID_LEN]; /* file name */
+
   struct ext_attr_rec *ext_attr;
 
   /* Memory attrs */
   u8_t d_count;			/* Count if the dir_record is in use or not */
-  mode_t d_mode;		/* file type, protection, etc. */
-/*   struct hash_idi_entry *id; */	/* id associated */
+
+	/*   struct hash_idi_entry *id; */	/* id associated */
   u32_t d_phy_addr;		/* physical address of this dir record */
   ino_t d_ino_nr;		/* inode number (identical to the address) */
   char d_mountpoint;		/* true if mounted on */
@@ -28,6 +48,8 @@ struct dir_record {
   struct dir_record *d_prior;	/* The same as before, this points to the dir parent */
   u32_t d_file_size;		/* Total size of the file */
 
+  struct iso_mnt *i_mnt;	/* Filesystem associated with this inode */
+  ISO_RRIP_INODE inode;         /* Rock Ridge Extension record */
 } dir_records[NR_DIR_RECORDS];
 
 struct ext_attr_rec {
@@ -65,3 +87,5 @@ struct ext_attr_rec {
 
 /* #define ASSIGN_ID 1 */
 /* #define NOT_ASSIGN_ID 0 */
+
+#endif /* _ISOFS_INODE_H_ */

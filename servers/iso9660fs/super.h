@@ -1,5 +1,8 @@
 /* This file contains the definitions of a ISO9660 structures */
-#include "inode.h"
+#ifndef _SUPER_H_
+#define _SUPER_H_
+
+#include "const.h"
 
 #define VD_BOOT_RECORD 0
 #define VD_PRIMARY 1
@@ -10,6 +13,7 @@
 #define MAX_ATTEMPTS 20 	/* # attempts to read the volume descriptors.
 				 * After it gives up */
 #define ROOT_INO_NR 1
+#define ROOT_REC_OFFSET 156
 
 /* Structure for the primary volume descriptor */
 struct iso9660_vd_pri {
@@ -45,4 +49,7 @@ struct iso9660_vd_pri {
   u8_t file_struct_ver;
   /* The rest is either not specified or reserved */
   u8_t count;
+  struct iso_mnt *mnt_data;
 } v_pri;
+
+#endif

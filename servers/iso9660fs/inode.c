@@ -4,8 +4,11 @@
 
 #include "inc.h"
 #include "buf.h"
-#include <minix/vfsif.h>
 
+#include <minix/vfsif.h>
+#include <sys/stat.h>
+
+#include "iso_rrip.h"
 
 /*===========================================================================*
  *				fs_putnode				     *
@@ -18,11 +21,11 @@ int fs_putnode()
 
   dir = get_dir_record(fs_m_in.REQ_INODE_NR);
   release_dir_record(dir);
-  
+
   count = fs_m_in.REQ_COUNT;
 
   if (count <= 0) return(EINVAL);
-  
+
   if (count > dir->d_count) {
      printf("put_inode: count too high: %d > %d\n", count, dir->d_count);
      return(EINVAL);
@@ -47,7 +50,7 @@ struct dir_record *dir;
   if (dir == NULL)
 	return(EINVAL);
 
-  if (--dir->d_count == 0) {    
+  if (--dir->d_count == 0) {
 	if (dir->ext_attr != NULL)
 		dir->ext_attr->count = 0;
 	dir->ext_attr = NULL;
@@ -57,7 +60,9 @@ struct dir_record *dir;
 	if (dir->d_next != NULL)
 		release_dir_record(dir);
 	dir->d_next = NULL;
+	dir->i_mnt = NULL;
   }
+
   return(OK);
 }
 
@@ -95,7 +100,7 @@ ino_t id_dir_record;
   /* Search through the cache if the inode is still present */
   for(i = 0; i < NR_DIR_RECORDS && dir == NULL; ++i) {
 	if (dir_records[i].d_ino_nr == id_dir_record
-					 && dir_records[i].d_count > 0) {
+	    		&& dir_records[i].d_count > 0) {
 		dir = dir_records + i;
 		dir->d_count++;
 	}
@@ -104,10 +109,11 @@ ino_t id_dir_record;
   if (dir == NULL) {
 	address = (u32_t)id_dir_record;
 	dir = load_dir_record_from_disk(address);
+	dir->d_ino_nr = id_dir_record;
   }
 
   if (dir == NULL) return(NULL);
-  
+
   return(dir);
 }
 
@@ -124,7 +130,7 @@ struct ext_attr_rec *get_free_ext_attr(void) {
 		return(dir);
 	}
   }
-  
+
   return(NULL);
 }
 
@@ -159,59 +165,63 @@ int create_ext_attr(struct ext_attr_rec *ext,char *buffer)
 
 
 /*===========================================================================*
- *				create_ext_attr				     *
+ *				create_dir_record 				     *
  *===========================================================================*/
-int create_dir_record(dir,buffer,address)
+int create_dir_record(dir, buffer, address)
 struct dir_record *dir;
 char *buffer;
 u32_t address;
 {
-/* Fills a dir record structure from the data read on the device */
-/* If the flag assign id is active it will return the id associated;
- * otherwise it will return OK. */
-  short size;
+	/* Fills a dir record structure from the data read on the device */
+	/* If the flag assign id is active it will return the id associated;
+	 * otherwise it will return OK. 
+	 */
+	struct iso_directory_record *isodir =
+		(struct iso_directory_record *)buffer;
 
-  size = buffer[0];
-  if (dir == NULL) return(EINVAL);
-  
-  /* The data structure dir record is filled with the stream of data
-   * that is read. */
-  dir->length = size;
-  dir->ext_attr_rec_length = *((u8_t*)buffer + 1);
-  memcpy(&dir->loc_extent_l,buffer + 2,sizeof(u32_t));
-  memcpy(&dir->loc_extent_m,buffer + 6,sizeof(u32_t));
-  memcpy(&dir->data_length_l,buffer + 10,sizeof(u32_t));
-  memcpy(&dir->data_length_m,buffer + 14,sizeof(u32_t));
-  memcpy(dir->rec_date,buffer + 18, sizeof(dir->rec_date));
-  dir->file_flags = *((u8_t*)buffer + 25);
-  dir->file_unit_size = *((u8_t*)buffer + 26);
-  dir->inter_gap_size = *((u8_t*)buffer + 27);
-  dir->vol_seq_number = *((u8_t*)buffer + 28);
-  dir->length_file_id = *((u8_t*)buffer + 32);
-  memcpy(dir->file_id,buffer + 33,dir->length_file_id);
-  dir->ext_attr = NULL;
+	if (dir == NULL)
+		return(EINVAL);
 
-  /* set memory attrs */
-  if ((dir->file_flags & D_TYPE) == D_DIRECTORY)
-	dir->d_mode = I_DIRECTORY;
-  else
-	dir->d_mode = I_REGULAR;
+	dir->length = isonum_711(isodir->length);
+	if(dir->length == 0)
+	  return(OK); /* Why? this means a end for a directory area.
+		         caller should take care of this situation
+			 releasing direcory record. */
 
-  /* Set permission to read only. Equal for all users. */
-  dir->d_mode |= R_BIT | X_BIT;
-  dir->d_mode |= R_BIT << 3 | X_BIT << 3;
-  dir->d_mode |= R_BIT << 6 | X_BIT << 6;
+	/* The data structure dir record is filled with the stream of data
+	* that is read. */
+	dir->ext_attr_rec_length = isonum_711(isodir->ext_attr_length);
+	dir->loc_extent = isonum_733(isodir->extent);
+	dir->data_length = isonum_733(isodir->size);
+	dir->file_flags = isonum_711(isodir->flags);
+	dir->file_unit_size = isonum_711(isodir->file_unit_size);
+	dir->inter_gap_size = isonum_711(isodir->interleave);
+	dir->vol_seq_number = isonum_723(isodir->volume_sequence_number);
+	dir->length_file_id = isonum_711(isodir->name_len);
+	memcpy(dir->file_id, buffer + 33, dir->length_file_id);
+	dir->ext_attr = NULL;
 
-  dir->d_mountpoint = FALSE;
-  dir->d_next = NULL;
-  dir->d_prior = NULL;
-  dir->d_file_size = dir->data_length_l;
+	dir->d_mountpoint = FALSE;
+	dir->d_next = NULL;
+	dir->d_prior = NULL;
+	dir->d_file_size = dir->data_length;
+	dir->d_phy_addr = address;
 
-  /* Set physical address of the dir record */
-  dir->d_phy_addr = address;
-  dir->d_ino_nr = (ino_t) address; /* u32_t e ino_t are the same datatype so
-				   * the cast is safe */
-  return(OK);
+	dir->i_mnt = GET_VPRIISOMNT();
+	switch (dir->i_mnt->iso_ftype) {
+	default:
+		cd9660_defattr((struct iso_directory_record *) buffer,
+			       dir, NULL);
+		cd9660_deftstamp((struct iso_directory_record *)buffer,
+				 dir, NULL);
+		break;
+	case ISO_FTYPE_RRIP:
+		cd9660_rrip_analyze((struct iso_directory_record *)buffer,
+				    dir, dir->i_mnt);
+		break;
+	}
+
+	return(OK);
 }
 
 
@@ -223,7 +233,7 @@ u32_t address;
 {
 /* This function load a particular dir record from a specific address
  * on the device */
- 
+
   int block_nr, offset, block_size, new_pos;
   struct buf *bp;
   struct dir_record *dir, *dir_next, *dir_parent, *dir_tmp;
@@ -261,19 +271,18 @@ u32_t address;
 		strncpy(old_name, dir_parent->file_id,
 			dir_parent->length_file_id);
 		old_name[dir_parent->length_file_id] = '\0';
-      
 		if (strcmp(name, old_name) == 0) {
 			dir_parent->d_next = dir_next;
 			dir_next->d_prior = dir_parent;
 
 			/* Link the dir records */
 			dir_tmp = dir_next;
-			size = dir_tmp->data_length_l;
+			size = dir_tmp->data_length;
 
 			/* Update the file size */
 			while (dir_tmp->d_prior != NULL) {
 				dir_tmp = dir_tmp->d_prior;
-				size += dir_tmp->data_length_l;
+				size += dir_tmp->data_length;
 				dir_tmp->d_file_size = size;
 			}
 
@@ -283,7 +292,7 @@ u32_t address;
 		} else {			/* This is another inode. */
 			release_dir_record(dir_next);
 			new_pos = block_size;
-		}      
+		}
 	} else {				/* record not valid */
 		release_dir_record(dir_next);
 		new_pos = block_size;		/* Exit from the while */
@@ -294,3 +303,191 @@ u32_t address;
   return(dir);
 }
 
+/*
+ * File attributes
+ */
+void cd9660_defattr(struct iso_directory_record *isodir,
+		 struct dir_record *inop, struct buf *bp)
+{
+	struct buf *bp2 = NULL;
+	struct iso_mnt *imp = inop->i_mnt;
+	struct iso_extended_attributes *ap = NULL;
+
+	if (isonum_711(isodir->flags)&2) {
+		inop->inode.iso_mode = S_IFDIR;
+		/*
+		 * If we return 2, fts() will assume there are no subdirectories
+		 * (just links for the path and .), so instead we return 1.
+		 */
+		inop->inode.iso_links = 1;
+	} else {
+		inop->inode.iso_mode = S_IFREG;
+		inop->inode.iso_links = 1;
+	}
+
+	if (!bp
+	    && (imp->im_flags & ISOFSMNT_EXTATT)
+	    && (isonum_711(isodir->ext_attr_length))) {
+		bp2 = get_block(isonum_733(isodir->extent));
+		bp = bp2;
+	}
+
+	if(bp) {
+		ap = (struct iso_extended_attributes *)(bp->data);
+
+		if (isonum_711(ap->version) == 1) {
+			if (!(ap->perm[1]&0x10))
+				inop->inode.iso_mode |= S_IRUSR;
+			if (!(ap->perm[1]&0x40))
+				inop->inode.iso_mode |= S_IXUSR;
+			if (!(ap->perm[0]&0x01))
+				inop->inode.iso_mode |= S_IRGRP;
+			if (!(ap->perm[0]&0x04))
+				inop->inode.iso_mode |= S_IXGRP;
+			if (!(ap->perm[0]&0x10))
+				inop->inode.iso_mode |= S_IROTH;
+			if (!(ap->perm[0]&0x40))
+				inop->inode.iso_mode |= S_IXOTH;
+			inop->inode.iso_uid = isonum_723(ap->owner); /* what about 0? */
+			inop->inode.iso_gid = isonum_723(ap->group); /* what about 0? */
+		} else
+			ap = NULL;
+	}
+	if (!ap) {
+		inop->inode.iso_mode |=
+		    S_IRUSR|S_IXUSR|S_IRGRP|S_IXGRP|S_IROTH|S_IXOTH;
+		inop->inode.iso_uid = (uid_t)0;
+		inop->inode.iso_gid = (gid_t)0;
+	}
+
+	if(bp2)
+		put_block(bp2);
+}
+
+/*
+ * Time stamps
+ */
+void cd9660_deftstamp(struct iso_directory_record *isodir, struct dir_record *inop,
+	struct buf *bp)
+{
+	struct buf *bp2 = NULL;
+	struct iso_mnt *imp = inop->i_mnt;
+	struct iso_extended_attributes *ap = NULL;
+
+	if (!bp
+	    && (imp->im_flags & ISOFSMNT_EXTATT)
+	    && (isonum_711(isodir->ext_attr_length))) {
+		bp2 = get_block(isonum_733(isodir->extent));
+		bp = bp2;
+	}
+
+	if (bp) {
+		ap = (struct iso_extended_attributes *)(bp->data);
+
+		if (isonum_711(ap->version) == 1) {
+			if (!cd9660_tstamp_conv17(ap->ftime,&inop->inode.iso_atime))
+				cd9660_tstamp_conv17(ap->ctime,&inop->inode.iso_atime);
+			if (!cd9660_tstamp_conv17(ap->ctime,&inop->inode.iso_ctime))
+				inop->inode.iso_ctime = inop->inode.iso_atime;
+			if (!cd9660_tstamp_conv17(ap->mtime,&inop->inode.iso_mtime))
+				inop->inode.iso_mtime = inop->inode.iso_ctime;
+		} else
+			ap = NULL;
+	}
+	if (!ap) {
+		cd9660_tstamp_conv7(isodir->date,&inop->inode.iso_ctime);
+		inop->inode.iso_atime = inop->inode.iso_ctime;
+		inop->inode.iso_mtime = inop->inode.iso_ctime;
+	}
+
+	if(bp2)
+		put_block(bp2);
+}
+
+int cd9660_tstamp_conv7(const u8_t *pi, struct timespec *pu)
+{
+	int crtime, days;
+	int y, m, d, hour, minute, second, tz;
+
+	y = pi[0] + 1900;
+	m = pi[1];
+	d = pi[2];
+	hour = pi[3];
+	minute = pi[4];
+	second = pi[5];
+	tz = pi[6];
+
+	if (y < 1970) {
+		pu->tv_sec  = 0;
+		pu->tv_nsec = 0;
+		return 0;
+	} else {
+#ifdef	ORIGINAL
+		/* computes day number relative to Sept. 19th,1989 */
+		/* don't even *THINK* about changing formula. It works! */
+		days = 367*(y-1980)-7*(y+(m+9)/12)/4-3*((y+(m-9)/7)/100+1)/4+275*m/9+d-100;
+#else
+		/*
+		 * Changed :-) to make it relative to Jan. 1st, 1970
+		 * and to disambiguate negative division
+		 */
+		days = 367*(y-1960)-7*(y+(m+9)/12)/4-3*((y+(m+9)/12-1)/100+1)/4+275*m/9+d-239;
+#endif
+		crtime = ((((days * 24) + hour) * 60 + minute) * 60) + second;
+
+		/* timezone offset is unreliable on some disks */
+		if (-48 <= tz && tz <= 52)
+			crtime -= tz * 15 * 60;
+	}
+	pu->tv_sec  = crtime;
+	pu->tv_nsec = 0;
+	return 1;
+}
+
+static u_int cd9660_chars2ui(const u_char *begin, int len)
+{
+	u_int rc;
+
+	for (rc = 0; --len >= 0;) {
+		rc *= 10;
+		rc += *begin++ - '0';
+	}
+	return rc;
+}
+
+int cd9660_tstamp_conv17(const u8_t *pi, struct timespec *pu)
+{
+	u_char tbuf[7];
+
+	/* year:"0001"-"9999" -> -1900  */
+	tbuf[0] = cd9660_chars2ui(pi,4) - 1900;
+
+	/* month: " 1"-"12"      -> 1 - 12 */
+	tbuf[1] = cd9660_chars2ui(pi + 4,2);
+
+	/* day:   " 1"-"31"      -> 1 - 31 */
+	tbuf[2] = cd9660_chars2ui(pi + 6,2);
+
+	/* hour:  " 0"-"23"      -> 0 - 23 */
+	tbuf[3] = cd9660_chars2ui(pi + 8,2);
+
+	/* minute:" 0"-"59"      -> 0 - 59 */
+	tbuf[4] = cd9660_chars2ui(pi + 10,2);
+
+	/* second:" 0"-"59"      -> 0 - 59 */
+	tbuf[5] = cd9660_chars2ui(pi + 12,2);
+
+	/* difference of GMT */
+	tbuf[6] = pi[16];
+
+	return cd9660_tstamp_conv7(tbuf,pu);
+}
+
+ino_t isodirino(struct iso_directory_record *isodir, struct iso_mnt *imp)
+{
+	ino_t ino;
+
+	ino = (isonum_733(isodir->extent) + isonum_711(isodir->ext_attr_length))
+	      << imp->im_bshift;
+	return (ino);
+}

@@ -4,7 +4,6 @@
 #include "const.h"
 #include "glo.h"
 
-
 /*===========================================================================*
  *				fs_readsuper				     *
  *===========================================================================*/
@@ -13,12 +12,13 @@ int fs_readsuper() {
   cp_grant_id_t label_gid;
   size_t label_len;
   int r = OK;
+  register struct buf *bp;
 
   fs_dev    = fs_m_in.REQ_DEV;
   label_gid = fs_m_in.REQ_GRANT;
   label_len = fs_m_in.REQ_PATH_LEN;
 
-  if (label_len > sizeof(fs_dev_label)) 
+  if (label_len > sizeof(fs_dev_label))
 	return(EINVAL);
 
   r = sys_safecopyfrom(fs_m_in.m_source, label_gid, 0, (vir_bytes)fs_dev_label,
@@ -43,11 +43,9 @@ int fs_readsuper() {
 	return(r);
   }
 
-  lmfs_set_blocksize(v_pri.logical_block_size_l, major(fs_dev));
-
   /* Return some root inode properties */
   fs_m_out.RES_INODE_NR = ID_DIR_RECORD(v_pri.dir_rec_root);
-  fs_m_out.RES_MODE = v_pri.dir_rec_root->d_mode;
+  fs_m_out.RES_MODE = v_pri.dir_rec_root->inode.iso_mode;
   fs_m_out.RES_FILE_SIZE_LO = v_pri.dir_rec_root->d_file_size;
   fs_m_out.RES_UID = SYS_UID; /* Always root */
   fs_m_out.RES_GID = SYS_GID; /* operator */
@@ -64,12 +62,12 @@ int fs_readsuper() {
 int fs_mountpoint()
 {
 /* This function looks up the mount point, it checks the condition whether
- * the partition can be mounted on the inode or not. 
+ * the partition can be mounted on the inode or not.
  */
 
   register struct dir_record *rip;
   int r = OK;
-  
+
   /* Temporarily open the file. */
   if ((rip = get_dir_record(fs_m_in.REQ_INODE_NR)) == NULL)
 	return(EINVAL);
@@ -78,9 +76,9 @@ int fs_mountpoint()
 	r = EBUSY;
 
   /* If the inode is not a dir returns error */
-  if ((rip->d_mode & I_TYPE) != I_DIRECTORY)
+  if ((rip->inode.iso_mode & I_TYPE) != I_DIRECTORY)
 	r = ENOTDIR;
-	
+
   release_dir_record(rip);
 
   if (r == OK)
@@ -99,4 +97,3 @@ int fs_unmount(void) {
   unmountdone = TRUE;
   return(OK);
 }
-

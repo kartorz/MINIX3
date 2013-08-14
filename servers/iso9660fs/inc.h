@@ -1,4 +1,3 @@
-
 #define _SYSTEM		1	/* get OK and negative error codes */
 
 #define VERBOSE		0	/* display diagnostics */
@@ -25,7 +24,11 @@
 #include <unistd.h>
 #include <signal.h>
 #include <sys/param.h>
+#include <sys/fs/cd9660/iso.h>
+#include <sys/time.h>
 
-#include "proto.h"
 #include "super.h"
 #include "glo.h"
+#include "cd9660_extern.h"
+#include "inode.h"
+#include "proto.h"

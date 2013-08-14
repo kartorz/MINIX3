@@ -1,4 +1,7 @@
 
+#ifndef _ISOFS_CONST_H_
+#define _ISOFS_CONST_H_
+
 #define GETDENTS_BUFSIZ	257
 
 #define ISO9660_STANDARD_ID "CD001" /* Standard code for ISO9660 filesystems */
@@ -60,3 +63,5 @@
 /* Miscellaneous constants */
 #define SYS_UID  ((uid_t) 0)	/* uid_t for processes PM and INIT */
 #define SYS_GID  ((gid_t) 0)	/* gid_t for processes PM and INIT */
+
+#endif /*_ISOFS_CONST_H_ */
