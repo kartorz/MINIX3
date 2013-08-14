@@ -30,47 +30,34 @@ static int stat_dir_record(
   int r;
   struct tm ltime;
   time_t time1;
-  u32_t blocks;
+  u32_t blocks, block_size;
 
-  blocks = v_pri.volume_space_size_l;
-  /* The unit of blocks should be 512 */
-  assert(v_pri.logical_block_size_l >= 512);
-  blocks = blocks * (v_pri.logical_block_size_l >> 9);
+  block_size = GET_VPRIISOMNT()->logical_block_size;
+  blocks = (dir->d_file_size + block_size -1) / block_size;
+ /* The unit of blocks should be 512 */ /* fix it */
+ /* assert(v_pri.logical_block_size_l >= 512);
+    blocks = blocks * (v_pri.logical_block_size_l >> 9); */ 
 
   memset(&statbuf, 0, sizeof(struct stat));
 
-  statbuf.st_dev = fs_dev;	/* the device of the file */
-  statbuf.st_ino = ID_DIR_RECORD(dir); /* the id of the dir record */
-  statbuf.st_mode = dir->d_mode; /* flags of the file */
-  statbuf.st_nlink = dir->d_count; /* times this file is used */
-  statbuf.st_uid = 0;		/* user root */
-  statbuf.st_gid = 0;		/* group operator */
-  statbuf.st_rdev = NO_DEV;
-  statbuf.st_size = dir->d_file_size;	/* size of the file */
-  statbuf.st_blksize = v_pri.logical_block_size_l;
-  statbuf.st_blocks = blocks;
-
-  ltime.tm_year = dir->rec_date[0];
-  ltime.tm_mon = dir->rec_date[1] - 1;
-  ltime.tm_mday = dir->rec_date[2];
-  ltime.tm_hour = dir->rec_date[3];
-  ltime.tm_min = dir->rec_date[4];
-  ltime.tm_sec = dir->rec_date[5];
-  ltime.tm_isdst = 0;
-
-  if (dir->rec_date[6] != 0)
-	ltime.tm_hour += dir->rec_date[6] / 4;
-
-  time1 = mktime(&ltime);
-
-  statbuf.st_atime = time1;
-  statbuf.st_mtime = time1;
-  statbuf.st_ctime = time1;
+  statbuf.st_dev	= fs_dev;
+  statbuf.st_ino 	= ID_DIR_RECORD(dir);
+  statbuf.st_mode 	= dir->inode.iso_mode;
+  statbuf.st_nlink 	= dir->inode.iso_links;
+  statbuf.st_uid 	= dir->inode.iso_uid;
+  statbuf.st_gid 	= dir->inode.iso_gid;
+  statbuf.st_rdev 	= dir->inode.iso_rdev;
+  statbuf.st_size 	= dir->d_file_size;
+  statbuf.st_blksize 	= block_size;
+  statbuf.st_blocks 	= blocks;
+  statbuf.st_atime 	= dir->inode.iso_atime.tv_sec;
+  statbuf.st_mtime 	= dir->inode.iso_mtime.tv_sec;
+  statbuf.st_ctime 	= dir->inode.iso_ctime.tv_sec;
 
   /* Copy the struct to user space. */
   r = sys_safecopyto(who_e, gid, 0, (vir_bytes) &statbuf,
 		     (phys_bytes) sizeof(statbuf));
-  
+
   return(r);
 }
 
@@ -87,8 +74,7 @@ int fs_stat()
   if ((dir = get_dir_record(fs_m_in.REQ_INODE_NR)) != NULL) {
 	r = stat_dir_record(dir, 0, fs_m_in.m_source, fs_m_in.REQ_GRANT);
 	release_dir_record(dir);
-  } 
-
+  }
   return(r);
 }
 
@@ -102,11 +88,11 @@ int fs_fstatfs()
   int r;
 
   st.f_bsize = v_pri.logical_block_size_l;
-  
+
   /* Copy the struct to user space. */
   r = sys_safecopyto(fs_m_in.m_source, fs_m_in.REQ_GRANT, 0,
 		     (vir_bytes) &st, (phys_bytes) sizeof(st));
-  
+
   return(r);
 }
 
@@ -135,7 +121,7 @@ int fs_statvfs()
   /* Copy the struct to user space. */
   r = sys_safecopyto(fs_m_in.m_source, fs_m_in.REQ_GRANT, 0, (vir_bytes) &st,
 		     (phys_bytes) sizeof(st));
-  
+
   return(r);
 }
 

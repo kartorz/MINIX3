@@ -1,4 +1,4 @@
-/* This file contains the main directory for the server. It waits for a 
+/* This file contains the main directory for the server. It waits for a
  * request and then send a response. */
 
 #include "inc.h"
@@ -46,7 +46,7 @@ int main(void) {
 
 	who_e = fs_m_in.m_source;	/* source of the request */
 
-	if (who_e != VFS_PROC_NR) { /* If the message is not for us just 
+	if (who_e != VFS_PROC_NR) { /* If the message is not for us just
 				    * continue */
 		continue;
 	}
@@ -61,12 +61,11 @@ int main(void) {
 	ind = req_nr-VFS_BASE;
 
 	if (ind < 0 || ind >= NREQS) {
-		error = EINVAL; 
+		error = EINVAL;
 	} else
 		error = (*fs_call_vec[ind])(); /* Process the request calling
 						* the appropriate function. */
-
-	fs_m_out.m_type = error; 
+	fs_m_out.m_type = error;
 	if (IS_VFS_FS_TRANSID(transid)) {
 		/* If a transaction ID was set, reset it */
 		fs_m_out.m_type = TRNS_ADD_ID(fs_m_out.m_type, transid);
@@ -141,7 +140,7 @@ message *m_in;				/* pointer to message */
  *				reply					     *
  *===========================================================================*/
 void reply(who, m_out)
-int who;	
+int who;
 message *m_out;                       	/* report result */
 {
   if (OK != send(who, m_out))    /* send the message */
