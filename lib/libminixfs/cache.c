@@ -163,7 +163,6 @@ lmfs_alloc_block(struct buf *bp)
 {
   ASSERT(!bp->data);
   ASSERT(bp->lmfs_bytes == 0);
-  //ASSERT(!(fs_block_size % PAGE_SIZE));
   if((bp->data = minix_mmap(0, fs_block_size,
      PROT_READ|PROT_WRITE, MAP_PREALLOC|MAP_ANON, -1, 0)) == MAP_FAILED) {
 	free_unused_blocks();
@@ -192,8 +191,6 @@ void minix_munmap_t(void *a, int len)
 	assert(a);
 	assert(a != MAP_FAILED);
 	assert(len > 0);
-	assert(!(len % PAGE_SIZE));
-	assert(!(av % PAGE_SIZE));
 
 	if(minix_munmap(a, len) < 0)
 		panic("libminixfs cache: munmap failed");
@@ -510,7 +507,6 @@ register struct buf *bp;	/* buffer pointer */
 
   ASSERT(bp->lmfs_bytes == fs_block_size);
   ASSERT(fs_block_size > 0);
-  //ASSERT(!(fs_block_size % PAGE_SIZE));
 
   pos = mul64u(bp->lmfs_blocknr, fs_block_size);
   if(fs_block_size > PAGE_SIZE) {
@@ -625,10 +621,9 @@ void lmfs_rw_scattered(
   STATICINIT(iovec, NR_IOREQS);
 
   assert(dev != NO_DEV);
-  assert(!(fs_block_size % PAGE_SIZE));
   assert(fs_block_size > 0);
   iov_per_block = fs_block_size / PAGE_SIZE;
-  
+
   /* (Shell) sort buffers on lmfs_blocknr. */
   gap = 1;
   do
@@ -793,7 +788,7 @@ void lmfs_set_blocksize(int new_block_size, int major)
 {
   cache_resize(new_block_size, MINBUFS);
   cache_heuristic_check(major);
-  
+
   /* Decide whether to use seconday cache or not.
    * Only do this if
    *	- it's available, and
